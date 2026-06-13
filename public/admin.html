@@ -1,1 +1,171 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yoga Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: #faf8f2; color: #1a1a1a; padding: 20px; }
+    h1 { font-size: 1.4rem; margin-bottom: 20px; }
+    h2 { font-size: 1rem; margin: 20px 0 10px; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
+    .card { background: #fff; border: 1.5px solid #ccc; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    input, select { width: 100%; padding: 8px 10px; margin: 5px 0 10px; border: 1.5px solid #ccc; border-radius: 6px; font-family: Georgia, serif; font-size: 13px; }
+    button { padding: 9px 20px; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-family: Georgia, serif; font-size: 13px; }
+    button.danger { background: #cc2200; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+    th { background: #f0ede6; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+    .tag.confirmed { background: #d4edda; color: #155724; }
+    .tag.cancelled { background: #f8d7da; color: #721c24; }
+    #adminKey { margin-bottom: 16px; }
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+  </style>
+</head>
+<body>
+
+<h1>🐒 Evryday Yoga — Admin</h1>
+
+<div class="card">
+  <label>Admin Key</label>
+  <input type="password" id="adminKey" placeholder="Enter your ADMIN_KEY">
+</div>
+
+<!-- Add Slot -->
+<h2>➕ Add Slot</h2>
+<div class="card">
+  <label>Activity</label>
+  <select id="slotActivity">
+    <option>Focus Time</option>
+    <option>Podcast Session</option>
+    <option>Creative Session</option>
+    <option>Workout & Reset</option>
+    <option>Social Chaos</option>
+    <option>Eat Drink Regret</option>
+    <option>Recover & Reflect</option>
+  </select>
+
+  <label>Time</label>
+  <input type="time" id="slotTime" value="10:00">
+
+  <label>Type</label>
+  <select id="slotType" onchange="toggleSlotType()">
+    <option value="recurring">Recurring (weekly)</option>
+    <option value="oneoff">One-off date</option>
+  </select>
+
+  <div id="recurringFields">
+    <label>Day of week</label>
+    <select id="slotDow">
+      <option value="1">Monday</option>
+      <option value="2">Tuesday</option>
+      <option value="3">Wednesday</option>
+      <option value="4">Thursday</option>
+      <option value="5">Friday</option>
+      <option value="6">Saturday</option>
+      <option value="0">Sunday</option>
+    </select>
+  </div>
+  <div id="oneoffFields" style="display:none">
+    <label>Date</label>
+    <input type="date" id="slotDate">
+  </div>
+
+  <label>Capacity (max bookings)</label>
+  <input type="number" id="slotCapacity" value="1" min="1" max="20">
+
+  <button onclick="addSlot()">Add Slot</button>
+  <span id="slotMsg" style="margin-left:10px;font-size:12px;color:green"></span>
+</div>
+
+<!-- Active Slots -->
+<h2>📅 Active Slots (next 4 weeks)</h2>
+<div id="slotsList"></div>
+
+<!-- Bookings -->
+<h2>📋 All Bookings</h2>
+<div style="overflow-x:auto">
+  <table id="bookingsTable">
+    <thead><tr><th>ID</th><th>Activity</th><th>Date</th><th>Time</th><th>Email</th><th>WhatsApp</th><th>Status</th><th>Reminder</th><th>Booked At</th></tr></thead>
+    <tbody id="bookingsBody"></tbody>
+  </table>
+</div>
+
+<script>
+  function key() { return document.getElementById('adminKey').value; }
+
+  function toggleSlotType() {
+    const t = document.getElementById('slotType').value;
+    document.getElementById('recurringFields').style.display = t==='recurring' ? '' : 'none';
+    document.getElementById('oneoffFields').style.display    = t==='oneoff'    ? '' : 'none';
+  }
+
+  async function addSlot() {
+    const type = document.getElementById('slotType').value;
+    const body = {
+      activity:    document.getElementById('slotActivity').value,
+      start_time:  document.getElementById('slotTime').value,
+      capacity:    parseInt(document.getElementById('slotCapacity').value),
+      day_of_week: type==='recurring' ? parseInt(document.getElementById('slotDow').value) : null,
+      date:        type==='oneoff'    ? document.getElementById('slotDate').value : null,
+    };
+    const r = await fetch('/admin/slots', {
+      method:'POST', headers:{'Content-Type':'application/json','x-admin-key':key()},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    document.getElementById('slotMsg').textContent = r.ok ? '✅ Slot added!' : '❌ ' + d.error;
+    if (r.ok) { loadSlots(); loadBookings(); }
+  }
+
+  async function deleteSlot(id) {
+    if (!confirm('Deactivate this slot?')) return;
+    await fetch(`/admin/slots/${id}`, { method:'DELETE', headers:{'x-admin-key':key()} });
+    loadSlots();
+  }
+
+  async function loadSlots() {
+    const r = await fetch('/slots');
+    const slots = await r.json();
+    const el = document.getElementById('slotsList');
+    if (!slots.length) { el.innerHTML = '<p style="color:#888;font-size:13px">No slots yet.</p>'; return; }
+    el.innerHTML = slots.map(s => `
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px">
+        <div>
+          <strong>${s.activity}</strong> &nbsp;
+          <span style="color:#555;font-size:12px">${s.date} @ ${s.start_time.slice(0,5)}</span> &nbsp;
+          <span style="font-size:11px;color:#888">${s.type} · cap:${s.capacity}</span>
+        </div>
+        <button class="danger" onclick="deleteSlot(${s.id})">Remove</button>
+      </div>`).join('');
+  }
+
+  async function loadBookings() {
+    const r = await fetch('/admin/bookings', { headers:{'x-admin-key':key()} });
+    if (!r.ok) return;
+    const bookings = await r.json();
+    document.getElementById('bookingsBody').innerHTML = bookings.map(b => `
+      <tr>
+        <td>${b.id}</td>
+        <td>${b.activity}</td>
+        <td>${b.session_date}</td>
+        <td>${b.session_time ? b.session_time.slice(0,5) : '—'}</td>
+        <td>${b.email||'—'}</td>
+        <td>${b.whatsapp||'—'}</td>
+        <td><span class="tag ${b.status}">${b.status}</span></td>
+        <td>${b.reminder_sent ? '✅' : '⏳'}</td>
+        <td>${new Date(b.booked_at).toLocaleDateString()}</td>
+      </tr>`).join('');
+  }
+
+  document.getElementById('adminKey').addEventListener('change', () => {
+    loadSlots(); loadBookings();
+  });
+
+  loadSlots();
+</script>
+</body>
+</html>
